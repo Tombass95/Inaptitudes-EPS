@@ -1,0 +1,7 @@
+{
+  "name": "Inaptitudes EPS",
+  "description": "Application de gestion des certificats médicaux et dispenses pour l'EPS avec extraction automatique par IA.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
