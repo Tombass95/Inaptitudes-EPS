@@ -10,7 +10,7 @@ export interface ExtractedData {
 }
 
 export async function extractExemptionData(base64Image: string): Promise<ExtractedData> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
   
   const prompt = `Analyse ce certificat médical EPS. Extrais en JSON :
   - lastName: Nom de famille (MAJUSCULES)
