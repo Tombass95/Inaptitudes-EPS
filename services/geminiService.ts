@@ -11,16 +11,18 @@ export interface ExtractedData {
 }
 
 export async function extractExemptionData(base64Data: string, mimeType: string = 'image/jpeg'): Promise<ExtractedData> {
+  // Le SDK Gemini ira chercher la clé dans process.env.API_KEY grâce au bridge dans index.tsx
   // @ts-ignore
   const apiKey = process.env.API_KEY;
 
   if (!apiKey) {
-    throw new Error("Configuration requise : La clé API_KEY n'est pas définie dans l'environnement de déploiement.");
+    throw new Error("La clé API n'est pas encore propagée. Si vous venez de l'ajouter sur Netlify, attendez 1 minute et rafraîchissez la page.");
   }
 
   const safeMimeType = mimeType === 'application/octet-stream' || !mimeType ? 
     (base64Data.startsWith('JVBER') ? 'application/pdf' : 'image/jpeg') : mimeType;
 
+  // Initialisation avec la clé trouvée dans process.env
   const ai = new GoogleGenAI({ apiKey });
   
   const prompt = `Tu es un assistant administratif expert en milieu scolaire français. 
@@ -73,7 +75,7 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
     console.error("Gemini Extraction Error:", error);
     
     if (error.message?.includes('API key not valid')) {
-       throw new Error("La clé API configurée sur Netlify est invalide.");
+       throw new Error("La clé API configurée (VITE_GEMINI_API_KEY) semble invalide.");
     }
 
     if (error.message?.includes('413')) {
