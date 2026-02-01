@@ -1,4 +1,5 @@
 
+// Import React to provide the React namespace for types like FC, ChangeEvent, and FormEvent
 import React, { useState, useEffect, useRef } from 'react';
 import { Exemption } from '../types';
 import { extractExemptionData } from '../services/geminiService';
@@ -36,7 +37,7 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
     isParentalNote: initialData?.isParentalNote || false,
     photoBase64: initialData?.photoBase64 || '',
     isTerminale: initialData?.isTerminale || false,
-    mimeType: 'image/jpeg'
+    mimeType: initialData?.photoBase64?.startsWith('JVBER') ? 'application/pdf' : 'image/jpeg'
   });
 
   const [scanning, setScanning] = useState(false);
@@ -55,7 +56,7 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
       img.onload = () => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        const MAX_WIDTH = 600;
+        const MAX_WIDTH = 1200; // Augmenté pour meilleure lisibilité IA
         let width = img.width;
         let height = img.height;
         if (width > MAX_WIDTH) {
@@ -65,7 +66,7 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
         canvas.width = width;
         canvas.height = height;
         ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.5).split(',')[1]);
+        resolve(canvas.toDataURL('image/jpeg', 0.7).split(',')[1]);
       };
       img.src = base64.startsWith('data:') ? base64 : `data:${type};base64,${base64}`;
     });
@@ -76,11 +77,22 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
     setError(null);
     try {
       let finalBase64 = base64;
-      if (mimeType.startsWith('image/')) {
-        finalBase64 = await compressImage(base64, mimeType);
+      let finalMime = mimeType;
+
+      // Correction MIME type pour mobile
+      if (!finalMime || finalMime === 'application/octet-stream') {
+        finalMime = base64.startsWith('JVBER') ? 'application/pdf' : 'image/jpeg';
       }
-      setFormData(prev => ({ ...prev, photoBase64: finalBase64, mimeType: mimeType }));
-      const data = await extractExemptionData(finalBase64, mimeType);
+
+      if (finalMime.startsWith('image/')) {
+        finalBase64 = await compressImage(base64, finalMime);
+        finalMime = 'image/jpeg';
+      }
+
+      setFormData(prev => ({ ...prev, photoBase64: finalBase64, mimeType: finalMime }));
+      
+      const data = await extractExemptionData(finalBase64, finalMime);
+      
       const rawLastName = cleanValue(data.lastName);
       setFormData(prev => ({
         ...prev,
@@ -92,8 +104,9 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
         startDate: data.startDate || prev.startDate,
         isTerminale: data.isTerminale || false
       }));
-    } catch (err) {
-      setError("Analyse partielle. Veuillez compléter manuellement.");
+    } catch (err: any) {
+      console.error("Extraction error:", err);
+      setError(err.message || "Erreur d'analyse. Veuillez compléter manuellement.");
     } finally {
       setScanning(false);
     }
@@ -102,9 +115,17 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Check file size for mobile (Warn if > 15MB)
+    if (file.size > 15 * 1024 * 1024) {
+      setError("Le fichier est trop lourd (max 15Mo). Essayez de prendre une photo plutôt.");
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async () => {
-      const base64 = (reader.result as string).split(',')[1];
+      const result = reader.result as string;
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
       await processAndExtract(base64, file.type);
     };
     reader.readAsDataURL(file);
@@ -224,7 +245,7 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
             )}
             <button 
               type="button"
-              onClick={() => setFormData({...formData, photoBase64: ''})}
+              onClick={() => setFormData({...formData, photoBase64: '', mimeType: 'image/jpeg'})}
               className="absolute top-2 right-2 bg-red-500 text-white w-8 h-8 rounded-full flex items-center justify-center shadow-lg active:scale-90"
             >
               <i className="fas fa-trash-alt text-sm"></i>
@@ -233,8 +254,12 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
         )}
 
         {error && (
-          <div className="mb-6 p-3 bg-red-50 text-red-600 text-xs font-bold rounded-xl flex items-center">
-            <i className="fas fa-exclamation-circle mr-2"></i> {error}
+          <div className="mb-6 p-4 bg-red-50 text-red-700 text-xs font-bold rounded-2xl flex items-start border border-red-100">
+            <i className="fas fa-exclamation-circle mt-0.5 mr-3 text-red-500"></i> 
+            <div>
+              <p className="uppercase tracking-tight">Erreur d'analyse</p>
+              <p className="font-medium opacity-80 mt-1">{error}</p>
+            </div>
           </div>
         )}
 
@@ -328,9 +353,9 @@ const ExemptionForm: React.FC<ExemptionFormProps> = ({ onSave, onCancel, initial
           <button 
             type="submit" 
             disabled={scanning}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-sm"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-sm disabled:opacity-50"
           >
-            {initialData?.id ? 'Mettre à jour' : 'Enregistrer'}
+            {scanning ? 'Analyse en cours...' : (initialData?.id ? 'Mettre à jour' : 'Enregistrer')}
           </button>
         </form>
       </div>
