@@ -46,9 +46,14 @@ const ExemptionCard: React.FC<ExemptionCardProps> = ({ exemption, onClick, onDel
             <h3 className="text-lg font-bold text-gray-800 leading-tight">
               {exemption.lastName.toUpperCase()} {exemption.firstName}
             </h3>
-            <p className="text-sm font-semibold text-blue-600 uppercase tracking-wide">
-              {exemption.studentClass}
-            </p>
+            <div className="flex items-center space-x-2 mt-1">
+              <p className="text-sm font-semibold text-blue-600 uppercase tracking-wide">
+                {exemption.studentClass}
+              </p>
+              {exemption.isTerminale && (
+                <span className="bg-gray-900 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter">BAC</span>
+              )}
+            </div>
           </div>
           <div className="flex flex-col items-end gap-1">
             <div className="flex gap-1">

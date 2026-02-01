@@ -1,26 +1,56 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Exemption } from './types';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
 import ExemptionForm from './components/ExemptionForm';
+import { isExpired } from './utils/dateHelpers';
+import { getExemptionsFromDB, saveExemptionsToDB, clearAllDB } from './services/storageService';
 
 const App: React.FC = () => {
-  const [exemptions, setExemptions] = useState<Exemption[]>(() => {
-    const saved = localStorage.getItem('eps-inaptitudes');
-    try {
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-  
+  const [exemptions, setExemptions] = useState<Exemption[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [view, setView] = useState<'dashboard' | 'form'>('dashboard');
   const [editingExemption, setEditingExemption] = useState<Exemption | undefined>(undefined);
 
+  // Initialisation : Migration localStorage -> IndexedDB puis chargement
   useEffect(() => {
-    localStorage.setItem('eps-inaptitudes', JSON.stringify(exemptions));
-  }, [exemptions]);
+    const initApp = async () => {
+      try {
+        // 1. Tenter de récupérer les données du localStorage (ancienne méthode)
+        const savedLocal = localStorage.getItem('eps-inaptitudes');
+        let initialData: Exemption[] = [];
+
+        if (savedLocal) {
+          initialData = JSON.parse(savedLocal);
+          // Migration vers IndexedDB
+          await saveExemptionsToDB(initialData);
+          // On nettoie le localStorage pour libérer le navigateur
+          localStorage.removeItem('eps-inaptitudes');
+          console.log("Migration localStorage vers IndexedDB réussie.");
+        } else {
+          // 2. Sinon, chargement depuis IndexedDB
+          initialData = await getExemptionsFromDB();
+        }
+
+        setExemptions(initialData);
+      } catch (e) {
+        console.error("Erreur d'initialisation du stockage:", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    initApp();
+  }, []);
+
+  // Sauvegarde automatique vers IndexedDB quand l'état change
+  useEffect(() => {
+    if (!isLoading) {
+      saveExemptionsToDB(exemptions).catch(err => {
+        console.error("Erreur lors de la sauvegarde auto:", err);
+      });
+    }
+  }, [exemptions, isLoading]);
 
   const handleSave = (newEx: Exemption) => {
     setExemptions(prev => {
@@ -37,20 +67,51 @@ const App: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    // Suppression directe car la confirmation est maintenant gérée par le bouton dans la carte
     setExemptions(prev => prev.filter(ex => ex.id !== id));
   };
+
+  const handleResetAll = useCallback(async () => {
+    await clearAllDB();
+    setExemptions([]);
+    window.scrollTo(0, 0);
+  }, []);
+
+  const handleClearExpired = useCallback(() => {
+    const allExpired = exemptions.filter(ex => isExpired(ex.endDate));
+    if (allExpired.length === 0) return;
+
+    const expiredOthersCount = allExpired.filter(ex => !ex.isTerminale).length;
+    if (expiredOthersCount > 0) {
+      setExemptions(prev => prev.filter(ex => !(isExpired(ex.endDate) && !ex.isTerminale)));
+    } else if (allExpired.length > 0) {
+      if (window.confirm(`Supprimer les ${allExpired.length} dossiers de Terminale expirés ?`)) {
+        setExemptions(prev => prev.filter(ex => !isExpired(ex.endDate)));
+      }
+    }
+  }, [exemptions]);
 
   const handleEdit = (exemption: Exemption) => {
     setEditingExemption(exemption);
     setView('form');
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-4">
+          <i className="fas fa-sync fa-spin text-blue-600 text-3xl"></i>
+          <p className="text-xs font-black uppercase text-gray-400 tracking-widest">Chargement de la base...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-md mx-auto sm:max-w-full">
       <Navbar 
         onHomeClick={() => { setView('dashboard'); setEditingExemption(undefined); }}
-        onAddClick={() => { setEditingExemption(undefined); setView('form'); }} 
+        onAddClick={() => { setEditingExemption(undefined); setView('form'); }}
+        onClearExpired={handleClearExpired}
       />
       
       <main className="flex-1 overflow-y-auto">
@@ -59,6 +120,7 @@ const App: React.FC = () => {
             exemptions={exemptions} 
             onExemptionClick={handleEdit}
             onDelete={handleDelete}
+            onResetAll={handleResetAll}
           />
         ) : (
           <ExemptionForm 

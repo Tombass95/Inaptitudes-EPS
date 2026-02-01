@@ -10,11 +10,13 @@ export interface Exemption {
   durationDays: number;
   photoBase64?: string; // Image du certificat stockée
   isParentalNote: boolean;
+  isTerminale: boolean; // Flag pour protection Bac
 }
 
 export enum SortOrder {
   ALPHA_ASC = 'ALPHA_ASC',
   ALPHA_DESC = 'ALPHA_DESC',
   CHRONO_ASC = 'CHRONO_ASC',
-  CHRONO_DESC = 'CHRONO_DESC'
+  CHRONO_DESC = 'CHRONO_DESC',
+  CLASS_ASC = 'CLASS_ASC'
 }
