@@ -4,22 +4,32 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 
 /**
- * BRIDGE DE SÉCURITÉ NETLIFY/VITE
- * Sur Netlify/Vite, seules les variables commençant par VITE_ sont visibles par le navigateur.
- * On les mappe sur process.env pour que le SDK Gemini puisse les trouver.
+ * BRIDGE D'ENVIRONNEMENT UNIVERSEL
+ * Netlify injecte les variables VITE_ au moment du build.
+ * Nous les mappons sur process.env.API_KEY pour respecter les exigences du SDK Gemini.
  */
-if (typeof (window as any).process === 'undefined') {
-  (window as any).process = { env: {} };
-}
+const ensureProcessEnv = () => {
+  if (typeof (window as any).process === 'undefined') {
+    (window as any).process = { env: {} };
+  }
+  
+  const processEnv = (window as any).process.env;
+  
+  // 1. Tenter de récupérer depuis Vite (standard Netlify)
+  try {
+    // @ts-ignore
+    const viteEnv = (import.meta as any).env || {};
+    processEnv.API_KEY = processEnv.API_KEY || viteEnv.VITE_GEMINI_API_KEY || viteEnv.API_KEY;
+  } catch (e) {}
 
-// @ts-ignore - On récupère les variables injectées par Vite/Netlify
-const viteEnv = (import.meta as any).env || {};
-const processEnv = (window as any).process.env;
+  // 2. Tenter de récupérer depuis les variables globales
+  // @ts-ignore
+  processEnv.API_KEY = processEnv.API_KEY || (window as any).VITE_GEMINI_API_KEY || (window as any).API_KEY;
 
-// On peuple process.env.API_KEY avec la clé que vous avez créée dans Netlify
-processEnv.API_KEY = processEnv.API_KEY || viteEnv.VITE_GEMINI_API_KEY || viteEnv.API_KEY;
+  console.log("Pont API Gemini initialisé.");
+};
 
-console.log("App initialising... Environment bridge established.");
+ensureProcessEnv();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {

@@ -11,20 +11,16 @@ export interface ExtractedData {
 }
 
 export async function extractExemptionData(base64Data: string, mimeType: string = 'image/jpeg'): Promise<ExtractedData> {
-  // Le SDK Gemini ira chercher la clé dans process.env.API_KEY grâce au bridge dans index.tsx
+  // On utilise directement process.env.API_KEY qui est peuplé par index.tsx
   // @ts-ignore
   const apiKey = process.env.API_KEY;
 
-  if (!apiKey) {
-    throw new Error("La clé API n'est pas encore propagée. Si vous venez de l'ajouter sur Netlify, attendez 1 minute et rafraîchissez la page.");
-  }
-
+  // On laisse le SDK Gemini gérer l'appel
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+  
   const safeMimeType = mimeType === 'application/octet-stream' || !mimeType ? 
     (base64Data.startsWith('JVBER') ? 'application/pdf' : 'image/jpeg') : mimeType;
 
-  // Initialisation avec la clé trouvée dans process.env
-  const ai = new GoogleGenAI({ apiKey });
-  
   const prompt = `Tu es un assistant administratif expert en milieu scolaire français. 
   Analyse ce document (certificat médical ou dispense EPS) et extrais les informations suivantes en JSON :
   
@@ -74,12 +70,16 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
   } catch (error: any) {
     console.error("Gemini Extraction Error:", error);
     
+    if (!apiKey) {
+      throw new Error("La clé API n'est pas détectée. Vérifiez que vous avez bien relancé un déploiement sur Netlify.");
+    }
+
     if (error.message?.includes('API key not valid')) {
-       throw new Error("La clé API configurée (VITE_GEMINI_API_KEY) semble invalide.");
+       throw new Error("La clé API configurée est invalide (vérifiez les espaces).");
     }
 
     if (error.message?.includes('413')) {
-      throw new Error("Fichier trop volumineux.");
+      throw new Error("Le document est trop volumineux pour être analysé.");
     }
     throw error;
   }
