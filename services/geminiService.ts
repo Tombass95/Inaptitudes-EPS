@@ -11,11 +11,20 @@ export interface ExtractedData {
 }
 
 export async function extractExemptionData(base64Data: string, mimeType: string = 'image/jpeg'): Promise<ExtractedData> {
+  // Récupération de la clé API depuis process.env
+  // @ts-ignore
+  const apiKey = process.env.API_KEY;
+
+  if (!apiKey) {
+    throw new Error("Clé API non trouvée. Veuillez cliquer sur 'Activer l'IA' sur l'écran d'accueil.");
+  }
+
   // Sécurité sur le type MIME pour mobile
   const safeMimeType = mimeType === 'application/octet-stream' || !mimeType ? 
     (base64Data.startsWith('JVBER') ? 'application/pdf' : 'image/jpeg') : mimeType;
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Initialisation à chaque appel pour garantir l'utilisation de la clé la plus récente
+  const ai = new GoogleGenAI({ apiKey });
   
   const prompt = `Tu es un assistant administratif expert en milieu scolaire. 
   Analyse ce document (certificat médical ou dispense EPS) et extrais les informations suivantes en JSON :
@@ -66,7 +75,15 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
     return JSON.parse(text);
   } catch (error: any) {
     console.error("Gemini Extraction Error:", error);
-    // On renvoie une erreur explicite pour que le formulaire puisse l'afficher
+    
+    // Gestion de l'erreur "Requested entity was not found" (Clé invalide ou projet non payant)
+    if (error.message?.includes('not found')) {
+      // @ts-ignore
+      if (window.aistudio && window.aistudio.openSelectKey) {
+        throw new Error("Problème de clé API. Veuillez ré-activer l'IA.");
+      }
+    }
+
     if (error.message?.includes('413')) {
       throw new Error("Fichier trop volumineux pour l'IA.");
     }

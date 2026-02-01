@@ -3,7 +3,12 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-console.log("App initialising...");
+// Polyfill pour process.env si l'environnement ne l'injecte pas (ex: Netlify sans bundler)
+if (typeof (window as any).process === 'undefined') {
+  (window as any).process = { env: {} };
+}
+
+console.log("App initialising with environment check...");
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
