@@ -11,12 +11,14 @@ export interface ExtractedData {
 }
 
 export async function extractExemptionData(base64Data: string, mimeType: string = 'image/jpeg'): Promise<ExtractedData> {
-  // On utilise directement process.env.API_KEY qui est peuplé par index.tsx
   // @ts-ignore
-  const apiKey = process.env.API_KEY;
+  const apiKey = (window as any).process?.env?.API_KEY;
 
-  // On laisse le SDK Gemini gérer l'appel
-  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
+  if (!apiKey || apiKey.trim() === "") {
+    throw new Error("Clé API introuvable. Étape 1: Vérifiez VITE_GEMINI_API_KEY sur Netlify. Étape 2: Relancez 'Clear cache and deploy'.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   
   const safeMimeType = mimeType === 'application/octet-stream' || !mimeType ? 
     (base64Data.startsWith('JVBER') ? 'application/pdf' : 'image/jpeg') : mimeType;
@@ -64,23 +66,16 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
     });
 
     const text = response.text;
-    if (!text) throw new Error("Réponse vide de l'IA");
+    if (!text) throw new Error("L'IA n'a pas pu lire le document.");
     
     return JSON.parse(text);
   } catch (error: any) {
-    console.error("Gemini Extraction Error:", error);
+    console.error("Gemini Error:", error);
     
-    if (!apiKey) {
-      throw new Error("La clé API n'est pas détectée. Vérifiez que vous avez bien relancé un déploiement sur Netlify.");
-    }
-
     if (error.message?.includes('API key not valid')) {
-       throw new Error("La clé API configurée est invalide (vérifiez les espaces).");
+       throw new Error("La clé API fournie à Netlify est invalide (vérifiez s'il n'y a pas un espace au début ou à la fin).");
     }
 
-    if (error.message?.includes('413')) {
-      throw new Error("Le document est trop volumineux pour être analysé.");
-    }
-    throw error;
+    throw new Error(error.message || "Erreur lors de l'analyse du document.");
   }
 }
