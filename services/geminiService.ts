@@ -47,8 +47,8 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const response = await ai.models.generateContent({
-        // Passage à un modèle plus stable pour éviter les erreurs 503 "Overloaded"
-        model: 'gemini-2.5-flash-lite-latest', 
+        // Correction du nom du modèle : 'gemini-flash-lite-latest' est le nom correct
+        model: 'gemini-flash-lite-latest', 
         contents: [
           {
             parts: [
@@ -80,12 +80,13 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
       return JSON.parse(text);
     } catch (error: any) {
       lastError = error;
-      const isOverloaded = error.message?.includes('503') || error.message?.includes('overloaded');
-      const isRateLimit = error.message?.includes('429');
+      const errorMsg = error.message || "";
+      const isOverloaded = errorMsg.includes('503') || errorMsg.includes('overloaded');
+      const isRateLimit = errorMsg.includes('429');
 
       if ((isOverloaded || isRateLimit) && attempt < 3) {
         console.warn(`Tentative ${attempt} échouée (Serveur occupé). Nouvelle tentative dans ${attempt}s...`);
-        await delay(1000 * attempt); // Attente progressive
+        await delay(1000 * attempt);
         continue;
       }
       break;
@@ -95,13 +96,19 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
   // Si on arrive ici, c'est que toutes les tentatives ont échoué
   console.error("Gemini Final Error:", lastError);
   
-  if (lastError.message?.includes('503') || lastError.message?.includes('overloaded')) {
+  const finalMsg = lastError.message || "";
+  
+  if (finalMsg.includes('503') || finalMsg.includes('overloaded')) {
     throw new Error("Les serveurs de Google sont temporairement surchargés. Réessayez dans 30 secondes.");
   }
 
-  if (lastError.message?.includes('API key not valid')) {
-    throw new Error("Clé API invalide sur Netlify.");
+  if (finalMsg.includes('API key not valid') || finalMsg.includes('403')) {
+    throw new Error("Clé API invalide ou non autorisée. Vérifiez VITE_GEMINI_API_KEY sur Netlify.");
   }
 
-  throw new Error(lastError.message || "Erreur lors de l'analyse du document.");
+  if (finalMsg.includes('404')) {
+    throw new Error("Erreur de configuration du modèle (404). Contactez le support.");
+  }
+
+  throw new Error(finalMsg || "Erreur lors de l'analyse du document.");
 }
