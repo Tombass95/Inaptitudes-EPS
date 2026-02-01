@@ -10,12 +10,17 @@ export interface ExtractedData {
   isTerminale: boolean;
 }
 
+/**
+ * Fonction de délai pour le retry
+ */
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function extractExemptionData(base64Data: string, mimeType: string = 'image/jpeg'): Promise<ExtractedData> {
   // @ts-ignore
   const apiKey = (window as any).process?.env?.API_KEY;
 
   if (!apiKey || apiKey.trim() === "") {
-    throw new Error("Clé API introuvable. Étape 1: Vérifiez VITE_GEMINI_API_KEY sur Netlify. Étape 2: Relancez 'Clear cache and deploy'.");
+    throw new Error("Clé API introuvable. Vérifiez votre configuration Netlify.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -37,45 +42,66 @@ export async function extractExemptionData(base64Data: string, mimeType: string 
   1. Si absent, mettre null.
   2. Réponds uniquement avec le JSON.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', 
-      contents: [
-        {
-          parts: [
-            { inlineData: { mimeType: safeMimeType, data: base64Data } },
-            { text: prompt }
-          ]
+  // Logique de retry (3 tentatives max)
+  let lastError: any;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await ai.models.generateContent({
+        // Passage à un modèle plus stable pour éviter les erreurs 503 "Overloaded"
+        model: 'gemini-2.5-flash-lite-latest', 
+        contents: [
+          {
+            parts: [
+              { inlineData: { mimeType: safeMimeType, data: base64Data } },
+              { text: prompt }
+            ]
+          }
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              lastName: { type: Type.STRING, nullable: true },
+              firstName: { type: Type.STRING, nullable: true },
+              studentClass: { type: Type.STRING, nullable: true },
+              durationDays: { type: Type.NUMBER, nullable: true },
+              startDate: { type: Type.STRING, nullable: true },
+              isTerminale: { type: Type.BOOLEAN }
+            },
+            required: ["isTerminale"]
+          }
         }
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            lastName: { type: Type.STRING, nullable: true },
-            firstName: { type: Type.STRING, nullable: true },
-            studentClass: { type: Type.STRING, nullable: true },
-            durationDays: { type: Type.NUMBER, nullable: true },
-            startDate: { type: Type.STRING, nullable: true },
-            isTerminale: { type: Type.BOOLEAN }
-          },
-          required: ["isTerminale"]
-        }
+      });
+
+      const text = response.text;
+      if (!text) throw new Error("L'IA n'a pas pu lire le document.");
+      
+      return JSON.parse(text);
+    } catch (error: any) {
+      lastError = error;
+      const isOverloaded = error.message?.includes('503') || error.message?.includes('overloaded');
+      const isRateLimit = error.message?.includes('429');
+
+      if ((isOverloaded || isRateLimit) && attempt < 3) {
+        console.warn(`Tentative ${attempt} échouée (Serveur occupé). Nouvelle tentative dans ${attempt}s...`);
+        await delay(1000 * attempt); // Attente progressive
+        continue;
       }
-    });
-
-    const text = response.text;
-    if (!text) throw new Error("L'IA n'a pas pu lire le document.");
-    
-    return JSON.parse(text);
-  } catch (error: any) {
-    console.error("Gemini Error:", error);
-    
-    if (error.message?.includes('API key not valid')) {
-       throw new Error("La clé API fournie à Netlify est invalide (vérifiez s'il n'y a pas un espace au début ou à la fin).");
+      break;
     }
-
-    throw new Error(error.message || "Erreur lors de l'analyse du document.");
   }
+
+  // Si on arrive ici, c'est que toutes les tentatives ont échoué
+  console.error("Gemini Final Error:", lastError);
+  
+  if (lastError.message?.includes('503') || lastError.message?.includes('overloaded')) {
+    throw new Error("Les serveurs de Google sont temporairement surchargés. Réessayez dans 30 secondes.");
+  }
+
+  if (lastError.message?.includes('API key not valid')) {
+    throw new Error("Clé API invalide sur Netlify.");
+  }
+
+  throw new Error(lastError.message || "Erreur lors de l'analyse du document.");
 }
